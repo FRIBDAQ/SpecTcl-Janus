@@ -21,7 +21,7 @@ USERLDFLAGS=
 #   Append your objects to the definitions below:
 #
 
-OBJECTS=MySpecTclApp.o
+OBJECTS=MySpecTclApp.o CFERSUnpacker.o CFERSA5202Unpacker.o
 
 #
 #  Finally the makefile targets.
