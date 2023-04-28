@@ -1,0 +1,45 @@
+Geometry 3,3
+# /user/0400x/spectcl-janus/Summary.win Written by @(#)dispwind.cc	2.2 1/28/94  at Fri Apr 28 14:00:44 2023
+
+Window  0,0,"LG"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  1,0,"HG"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  2,0,"counts"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  0,1,"ToT_int"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  1,1,"ToT_float"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  0,2,"ToA_int"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
+Window  1,2,"ToA_float"
+   SCALE  AUTO
+   Refresh 1
+   MAPPED 1
+   Rendition Color
+Endwindow
