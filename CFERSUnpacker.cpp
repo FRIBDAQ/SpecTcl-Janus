@@ -71,13 +71,13 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
 
     for (auto& event : events) {
       for (int iCh = 0; iCh < 64; iCh++) {
-        m_lg[iCh] = event.energyLG[iCh];
-        m_hg[iCh] = event.energyHG[iCh];
-        m_counts[iCh] = event.counts[iCh];
-        m_toa_int[iCh] = event.ToA_int[iCh];
-        m_tot_int[iCh] = event.ToT_int[iCh];
-        m_toa_float[iCh] = event.ToA_float[iCh];
-        m_tot_float[iCh] = event.ToT_float[iCh];
+        if (event.hasEnergyLG[iCh])  m_lg[iCh] = event.energyLG[iCh];
+        if (event.hasEnergyHG[iCh])  m_hg[iCh] = event.energyHG[iCh];
+        if (event.hasCounts[iCh])    m_counts[iCh] = event.counts[iCh];
+        if (event.hasToA_int[iCh])   m_toa_int[iCh] = event.ToA_int[iCh];
+        if (event.hasToT_int[iCh])   m_tot_int[iCh] = event.ToT_int[iCh];
+        if (event.hasToA_float[iCh]) m_toa_float[iCh] = event.ToA_float[iCh];
+        if (event.hasToT_float[iCh]) m_tot_float[iCh] = event.ToT_float[iCh];
       }
     }
   } catch (exception& exc) {

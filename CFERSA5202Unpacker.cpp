@@ -41,19 +41,41 @@ T CFERSA5202Unpacker::getCombined(Iter &iter) {
   return value;
 }
 
-ParsedFERSA5202Event
-CFERSA5202Unpacker::parseCommonHeader(Iter& iter) {
+void
+CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent) {
   int eventSize = *iter++;
 
-  ParsedFERSA5202Event anEvent;
   TranslatorPointer<uint8_t> oneByteIter(iter);
   anEvent.board_id = *oneByteIter++;
   iter = oneByteIter;
   anEvent.tstamp_us = (double)getCombined<uint64_t>(iter);
   anEvent.trigger_id = getCombined<uint64_t>(iter);
   anEvent.chmask = getCombined<uint64_t>(iter);
+}
 
-  return anEvent;
+void
+CFERSA5202Unpacker::initialize(ParsedFERSA5202Event &anEvent) {
+  anEvent.tstamp_us = 0;
+  anEvent.board_id = 0;
+  anEvent.nhits = 0;
+  anEvent.trigger_id = 0;
+  anEvent.chmask = 0;
+  for (int iCh = 0; iCh < 64; iCh++) {
+    anEvent.hasEnergyHG[iCh] = 0;
+    anEvent.energyHG[iCh] = 0;
+    anEvent.hasEnergyLG[iCh] = 0;
+    anEvent.energyLG[iCh] = 0;
+    anEvent.hasToA_int[iCh] = 0;
+    anEvent.ToA_int[iCh] = 0;
+    anEvent.hasToA_float[iCh] = 0;
+    anEvent.ToA_float[iCh] = 0.f;
+    anEvent.hasToT_int[iCh] = 0;
+    anEvent.ToT_int[iCh] = 0;
+    anEvent.hasToT_float[iCh] = 0;
+    anEvent.ToT_float[iCh] = 0.f;
+    anEvent.hasCounts[iCh] = 0;
+    anEvent.counts[iCh] = 0;
+  }
 }
 
 vector<ParsedFERSA5202Event>
@@ -66,10 +88,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
   int timeunit = metadata & 0XFF;
 
   auto iter = begin;
+
+  ParsedFERSA5202Event anEvent;
+  initialize(anEvent);
+
   switch (acqmode) {
     case ACQMODE_SPECT:
     {
-      ParsedFERSA5202Event anEvent = parseCommonHeader(iter);
+      parseCommonHeader(iter, anEvent);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
@@ -77,8 +103,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
         int chIdx = *oneByteIter++;
         int dataType = *oneByteIter++;
         iter = oneByteIter;
-        if (dataType & DATATYPE_LG) anEvent.energyLG[chIdx] = *iter++;
-        if (dataType & DATATYPE_HG) anEvent.energyHG[chIdx] = *iter++;
+        if (dataType & DATATYPE_LG) {
+          anEvent.hasEnergyLG[chIdx] = true;
+          anEvent.energyLG[chIdx] = *iter++;
+        }
+        if (dataType & DATATYPE_HG) {
+          anEvent.hasEnergyHG[chIdx] = true;
+          anEvent.energyHG[chIdx] = *iter++;
+        }
       }
 
       parsedData.push_back(anEvent);
@@ -88,7 +120,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
 
     case ACQMODE_SPECTIMING:
     {
-      ParsedFERSA5202Event anEvent = parseCommonHeader(iter);
+      parseCommonHeader(iter, anEvent);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       switch (timeunit) {
@@ -99,10 +131,22 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             int chIdx = *oneByteIter++;
             int dataType = *oneByteIter++;
             iter = oneByteIter;
-            if (dataType & DATATYPE_LG)  anEvent.energyLG[chIdx] = *iter++;
-            if (dataType & DATATYPE_HG)  anEvent.energyHG[chIdx] = *iter++;
-            if (dataType & DATATYPE_TOA) anEvent.ToA_int[chIdx] = getCombined<uint32_t>(iter);
-            if (dataType & DATATYPE_TOT) anEvent.ToT_int[chIdx] = *iter++;
+            if (dataType & DATATYPE_LG) {
+              anEvent.hasEnergyLG[chIdx] = true;
+              anEvent.energyLG[chIdx] = *iter++;
+            }
+            if (dataType & DATATYPE_HG) {
+              anEvent.hasEnergyHG[chIdx] = true;
+              anEvent.energyHG[chIdx] = *iter++;
+            }
+            if (dataType & DATATYPE_TOA) {
+              anEvent.hasToA_int[chIdx] = true;
+              anEvent.ToA_int[chIdx] = getCombined<uint32_t>(iter);
+            }
+            if (dataType & DATATYPE_TOT) {
+              anEvent.hasToT_int[chIdx] = true;
+              anEvent.ToT_int[chIdx] = *iter++;
+            }
           }
 
           break;
@@ -115,10 +159,22 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             int chIdx = *oneByteIter++;
             int dataType = *oneByteIter++;
             iter = oneByteIter;
-            if (dataType & DATATYPE_LG)  anEvent.energyLG[chIdx] = *iter++;
-            if (dataType & DATATYPE_HG)  anEvent.energyHG[chIdx] = *iter++;
-            if (dataType & DATATYPE_TOA) anEvent.ToA_float[chIdx] = (float) getCombined<uint32_t>(iter);
-            if (dataType & DATATYPE_TOT) anEvent.ToT_float[chIdx] = (float) getCombined<uint32_t>(iter);
+            if (dataType & DATATYPE_LG) {
+              anEvent.hasEnergyLG[chIdx] = true;
+              anEvent.energyLG[chIdx] = *iter++;
+            }
+            if (dataType & DATATYPE_HG) {
+              anEvent.hasEnergyHG[chIdx] = true;
+              anEvent.energyHG[chIdx] = *iter++;
+            }
+            if (dataType & DATATYPE_TOA) {
+              anEvent.hasToA_float[chIdx] = true;
+              anEvent.ToA_float[chIdx] = (float)getCombined<uint32_t>(iter);
+            }
+            if (dataType & DATATYPE_TOT) {
+              anEvent.hasToT_float[chIdx] = true;
+              anEvent.ToT_float[chIdx] = (float)getCombined<uint32_t>(iter);
+            }
           }
 
           break;
@@ -137,13 +193,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
     }
     case ACQMODE_COUNTING: 
     {
-      ParsedFERSA5202Event anEvent = parseCommonHeader(iter);
+      parseCommonHeader(iter, anEvent);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
         TranslatorPointer<uint8_t> oneByteIter(iter);
         int chIdx = *oneByteIter++;
         iter = oneByteIter;
+        anEvent.hasCounts[chIdx] = true;
         anEvent.counts[chIdx] = getCombined<uint32_t>(iter);
       }
 
@@ -155,7 +212,6 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
     case ACQMODE_TIMING:
     {
       int eventSize = *iter++;
-      ParsedFERSA5202Event anEvent;
       TranslatorPointer<uint8_t> oneByteIter(iter);
       anEvent.board_id = *oneByteIter++;
       iter = oneByteIter;
@@ -170,8 +226,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             int chIdx = *oneByteIter++;
             int dataType = *oneByteIter++;
             iter = oneByteIter;
-            if (dataType & DATATYPE_TOA) anEvent.ToA_int[chIdx] = getCombined<uint32_t>(iter);
-            if (dataType & DATATYPE_TOT) anEvent.ToT_int[chIdx] = *iter++;
+            if (dataType & DATATYPE_TOA) {
+              anEvent.hasToA_int[chIdx] = true;
+              anEvent.ToA_int[chIdx] = getCombined<uint32_t>(iter);
+            }
+            if (dataType & DATATYPE_TOT) {
+              anEvent.hasToT_int[chIdx] = true;
+              anEvent.ToT_int[chIdx] = *iter++;
+            }
           }
 
           break;
@@ -184,8 +246,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             int chIdx = *oneByteIter++;
             int dataType = *oneByteIter++;
             iter = oneByteIter;
-            if (dataType & DATATYPE_TOA) anEvent.ToA_float[chIdx] = (float) getCombined<uint32_t>(iter);
-            if (dataType & DATATYPE_TOT) anEvent.ToT_float[chIdx] = (float) getCombined<uint32_t>(iter);
+            if (dataType & DATATYPE_TOA) {
+              anEvent.hasToA_float[chIdx] = true;
+              anEvent.ToA_float[chIdx] = (float)getCombined<uint32_t>(iter);
+            }
+            if (dataType & DATATYPE_TOT) {
+              anEvent.hasToT_float[chIdx] = true;
+              anEvent.ToT_float[chIdx] = (float)getCombined<uint32_t>(iter);
+            }
           }
 
           break;
