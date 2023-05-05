@@ -149,11 +149,13 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             }
             if (dataType & DATATYPE_TOA) {
               anEvent.hasToA_float[chIdx] = true;
-              anEvent.ToA_float[chIdx] = (float)getCombined<uint32_t>(iter);
+              uint32_t tempValue = getCombined<uint32_t>(iter);
+              memcpy(&anEvent.ToA_float[chIdx], &tempValue, sizeof(float));
             }
             if (dataType & DATATYPE_TOT) {
               anEvent.hasToT_float[chIdx] = true;
-              anEvent.ToT_float[chIdx] = (float)getCombined<uint32_t>(iter);
+              uint32_t tempValue = getCombined<uint32_t>(iter);
+              memcpy(&anEvent.ToT_float[chIdx], &tempValue, sizeof(float));
             }
           }
 
@@ -228,11 +230,13 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
             iter = oneByteIter;
             if (dataType & DATATYPE_TOA) {
               anEvent.hasToA_float[chIdx] = true;
-              anEvent.ToA_float[chIdx] = (float)getCombined<uint32_t>(iter);
+              uint32_t tempValue = getCombined<uint32_t>(iter);
+              memcpy(&anEvent.ToA_float[chIdx], &tempValue, sizeof(float));
             }
             if (dataType & DATATYPE_TOT) {
               anEvent.hasToT_float[chIdx] = true;
-              anEvent.ToT_float[chIdx] = (float)getCombined<uint32_t>(iter);
+              uint32_t tempValue = getCombined<uint32_t>(iter);
+              memcpy(&anEvent.ToT_float[chIdx], &tempValue, sizeof(float));
             }
           }
 
