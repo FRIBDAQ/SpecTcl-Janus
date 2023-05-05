@@ -7,26 +7,6 @@
 
 using namespace std;
 
-static const uint32_t TYPE_MASK (0x07000000);
-static const uint32_t TYPE_HDR  (0x02000000);
-static const uint32_t TYPE_DATA (0x00000000);
-static const uint32_t TYPE_TRAIL(0x04000000);
-
-static const unsigned GEO_SHIFT(27);
-static const uint32_t GEO_MASK (0xf8000000);
-
-static const unsigned HDR_COUNT_SHIFT(8);      
-static const uint32_t HDR_COUNT_MASK (0x00003f00);
-static const unsigned HDR_CRATE_SHIFT(16);
-static const uint32_t HDR_CRATE_MASK (0x00ff0000);
-
-static const unsigned DATA_CHANSHIFT(16);
-static const uint32_t DATA_CHANMASK (0x001f0000);
-static const uint32_t DATA_CONVMASK (0x00003fff);
-
-static const uint32_t TRAIL_COUNT_MASK(0x00ffffff);
-static const uint32_t BERR(0xffffffff);
-
 template <typename T>
 T CFERSA5202Unpacker::getCombined(Iter &iter) {
   size_t outputBitWidth = sizeof(T)*8;
@@ -35,7 +15,7 @@ T CFERSA5202Unpacker::getCombined(Iter &iter) {
 
   T value = 0;
   for (int i = 0; i < totalORs; i++) {
-    value |= (T) *iter++ << (outputBitWidth - (i + 1)*inputBitWidth);
+    value |= (T) *iter++ << i*inputBitWidth;
   }
 
   return value;
