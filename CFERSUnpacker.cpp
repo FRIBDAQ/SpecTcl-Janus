@@ -7,6 +7,10 @@
 #include <climits>
 #include <cfloat>
 
+// Data file format
+#define FM320 // 3.2.0
+//#define FM310 // 3.1.0
+
 #include "FERS_fileheader.h"
 #include "FERS_constant.h"
 
