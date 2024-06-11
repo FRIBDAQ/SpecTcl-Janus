@@ -25,8 +25,8 @@ typedef struct __attribute__((__packed__)) {
 	uint8_t software_major;
 	uint8_t software_minor;
 	uint8_t software_patch;
-  uint16_t board_version;
-  uint16_t run_number;
+	uint16_t boardtype;
+	uint16_t runnumber;
 	uint8_t acqmode;
 	uint16_t energyNCH;
 	uint8_t timeunit;
