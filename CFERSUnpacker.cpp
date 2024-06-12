@@ -40,10 +40,10 @@ CFERSUnpacker::operator()(const Address_t pEvent,
 {
   TranslatorPointer<uint16_t> p(*rDecoder.getBufferTranslator(), pEvent);
 
-  int firstTwoBytes = *p++ & 0xffff;
+  int inclusiveSize = *p++ & 0xffff;
 
-  // File header event is always 21
-  if (firstTwoBytes == sizeof(FileHeader_t)) {
+  // File header event is always FileHeader_t size - 2(size) - 4(ender)
+  if (inclusiveSize - 6 == sizeof(FileHeader_t)) {
     /*
     // Leave it just in case we need it
     TranslatorPointer<FileHeader_t> pp(p);
@@ -64,7 +64,11 @@ CFERSUnpacker::operator()(const Address_t pEvent,
     return kfTRUE;
   }
 
-  return unpack(p, firstTwoBytes);
+  // Reaching here are events
+
+  int metadata = *p++ & 0xffff;
+
+  return unpack(p, metadata);
 }
 
 Bool_t

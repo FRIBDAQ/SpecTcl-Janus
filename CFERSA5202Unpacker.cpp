@@ -263,5 +263,9 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
     }
   }
 
+  // Skipping ender
+  *iter++;
+  *iter++;
+
   return parsedData;
 }
