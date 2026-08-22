@@ -16,6 +16,7 @@ class CFERSUnpacker : public CEventProcessor
 {
   private:
     CFERSA5202Unpacker     m_unpacker;
+    int                    m_dataformat;
     CTreeParameterArray    m_lg;
     CTreeParameterArray    m_hg;
     CTreeParameterArray    m_counts;

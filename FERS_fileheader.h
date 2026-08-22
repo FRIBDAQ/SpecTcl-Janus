@@ -18,10 +18,10 @@
 #ifndef _FERS_FILEHEADER_H_
 #define _FERS_FILEHEADER_H_
 
-// 3.3.0 (Janus 4.2.0) has the same header layout as 3.2.0;
-// only the dataformat version bytes and the acqmode bit7
-// (Enable_2nd_tstamp) flag are new
-#if defined(FM330) || defined(FM320)
+// 3.3.0 (Janus 4.2.0) and 3.4.0 (Janus 5.0.1) have the same header
+// layout as 3.2.0; only the dataformat version bytes and the acqmode
+// bit7 (Enable_2nd_tstamp) flag are new
+#if defined(FM340) || defined(FM330) || defined(FM320)
 typedef struct __attribute__((__packed__)) {
 	uint8_t dataformat_major;
 	uint8_t dataformat_minor;

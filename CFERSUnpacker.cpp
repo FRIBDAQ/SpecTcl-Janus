@@ -7,8 +7,11 @@
 #include <climits>
 #include <cfloat>
 
-// Data file format
-#define FM330 // 3.3.0 (Janus 4.2.0)
+// Data file format for FileHeader_t layout selection; the actual
+// format version is read from the header record at run time
+// (3.3.0 = Janus 4.2.0, 3.4.0 = Janus 5.0.1 -- same header layout)
+#define FM340 // 3.4.0 (Janus 5.0.1)
+//#define FM330 // 3.3.0 (Janus 4.2.0)
 //#define FM320 // 3.2.0
 //#define FM310 // 3.1.0
 
@@ -19,6 +22,7 @@ using namespace std;
 
 CFERSUnpacker::CFERSUnpacker()
   : m_unpacker(),
+    m_dataformat(34),
     m_lg("LG", 10000, 0.0, (double) USHRT_MAX, "channels", 64, 0),
     m_hg("HG", 10000, 0.0, (double) USHRT_MAX, "channels", 64, 0),
     m_counts("counts", 10000, 0.0, (double) UINT_MAX, "counts", 64, 0),
@@ -45,12 +49,18 @@ CFERSUnpacker::operator()(const Address_t pEvent,
 
   // File header event is always 2(size) + FileHeader_t size + 4(ender)
   int headerSize = 2 + sizeof(FileHeader_t) + 4;
-#ifdef FM330
+#if defined(FM330) || defined(FM340)
   // Since Janus 4.2.0 the item is padded with 0xff up to a multiple of 4
   // and the padding is counted in inclusiveSize
   headerSize = (headerSize + 3) & ~3;
 #endif
   if (inclusiveSize == headerSize) {
+    // First two bytes of the header record are the dataformat version
+    TranslatorPointer<uint8_t> pVersion(p);
+    int major = *pVersion++;
+    int minor = *pVersion++;
+    m_dataformat = major*10 + minor;
+
     /*
     // Leave it just in case we need it
     TranslatorPointer<FileHeader_t> pp(p);
@@ -82,7 +92,8 @@ Bool_t
 CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
 {
   try {
-    vector<ParsedFERSA5202Event> events = m_unpacker.parseAll(begin, metadata);
+    vector<ParsedFERSA5202Event> events = m_unpacker.parseAll(begin, metadata,
+                                                              m_dataformat);
 
     for (auto& event : events) {
       for (int iCh = 0; iCh < 64; iCh++) {

@@ -33,7 +33,8 @@ CFERSA5202Unpacker::getDouble(Iter &iter) {
 
 void
 CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent,
-                                      bool has2ndTstamp) {
+                                      bool has2ndTstamp, bool hasDeltaTref,
+                                      bool hasNumHits) {
   int eventSize = *iter++;
 
   TranslatorPointer<uint8_t> oneByteIter(iter);
@@ -41,14 +42,18 @@ CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent,
   iter = oneByteIter;
   anEvent.tstamp_us = getDouble(iter);
   if (has2ndTstamp) anEvent.rel_tstamp_us = getDouble(iter);
+  if (hasDeltaTref) anEvent.DeltaTref = getDouble(iter);
   anEvent.trigger_id = getCombined<uint64_t>(iter);
   anEvent.chmask = getCombined<uint64_t>(iter);
+  if (hasNumHits) anEvent.nhits = *iter++;
+  else anEvent.nhits = __builtin_popcountll(anEvent.chmask);
 }
 
 void
 CFERSA5202Unpacker::initialize(ParsedFERSA5202Event &anEvent) {
   anEvent.tstamp_us = 0;
   anEvent.rel_tstamp_us = 0;
+  anEvent.DeltaTref = 0;
   anEvent.board_id = 0;
   anEvent.nhits = 0;
   anEvent.trigger_id = 0;
@@ -73,7 +78,8 @@ CFERSA5202Unpacker::initialize(ParsedFERSA5202Event &anEvent) {
 
 vector<ParsedFERSA5202Event>
 CFERSA5202Unpacker::parseAll(const Iter& begin,
-                             const uint16_t metadata)
+                             const uint16_t metadata,
+                             const int dataformat)
 {
   vector<ParsedFERSA5202Event> parsedData;
 
@@ -83,6 +89,14 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
   bool has2ndTstamp = metadata & 0x8000;
   int timeunit = metadata & 0XFF;
 
+  // Since Janus 5.0.1 (format 3.4.0) spect/spectiming/counting events
+  // carry num_of_hits after chmask, and spectiming carries DeltaTref
+  // before trigger_id. In counting mode the written chmask is masked
+  // with ChEnableMask while the hit records follow the raw mask, so
+  // num_of_hits is authoritative, not popcount(chmask).
+  bool hasNumHits = dataformat >= 34;
+  bool hasDeltaTref = dataformat >= 34 && acqmode == ACQMODE_SPECTIMING;
+
   auto iter = begin;
 
   ParsedFERSA5202Event anEvent;
@@ -91,8 +105,8 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
   switch (acqmode) {
     case ACQMODE_SPECT:
     {
-      parseCommonHeader(iter, anEvent, has2ndTstamp);
-      int numChannels = __builtin_popcountll(anEvent.chmask);
+      parseCommonHeader(iter, anEvent, has2ndTstamp, hasDeltaTref, hasNumHits);
+      int numChannels = anEvent.nhits;
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
         TranslatorPointer<uint8_t> oneByteIter(iter);
@@ -116,8 +130,8 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
 
     case ACQMODE_SPECTIMING:
     {
-      parseCommonHeader(iter, anEvent, has2ndTstamp);
-      int numChannels = __builtin_popcountll(anEvent.chmask);
+      parseCommonHeader(iter, anEvent, has2ndTstamp, hasDeltaTref, hasNumHits);
+      int numChannels = anEvent.nhits;
 
       switch (timeunit) {
         case TIMEUNIT_LSB:
@@ -191,8 +205,8 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
     }
     case ACQMODE_COUNTING: 
     {
-      parseCommonHeader(iter, anEvent, has2ndTstamp);
-      int numChannels = __builtin_popcountll(anEvent.chmask);
+      parseCommonHeader(iter, anEvent, has2ndTstamp, hasDeltaTref, hasNumHits);
+      int numChannels = anEvent.nhits;
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
         TranslatorPointer<uint8_t> oneByteIter(iter);
