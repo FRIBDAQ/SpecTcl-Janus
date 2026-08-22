@@ -1,4 +1,5 @@
 #include "CFERSA5202Unpacker.h"
+#include <cstring>
 #include <string>
 #include <stdexcept>
 #include <iostream>
@@ -21,14 +22,25 @@ T CFERSA5202Unpacker::getCombined(Iter &iter) {
   return value;
 }
 
+double
+CFERSA5202Unpacker::getDouble(Iter &iter) {
+  uint64_t tempValue = getCombined<uint64_t>(iter);
+  double value;
+  memcpy(&value, &tempValue, sizeof(double));
+
+  return value;
+}
+
 void
-CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent) {
+CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent,
+                                      bool has2ndTstamp) {
   int eventSize = *iter++;
 
   TranslatorPointer<uint8_t> oneByteIter(iter);
   anEvent.board_id = *oneByteIter++;
   iter = oneByteIter;
-  anEvent.tstamp_us = (double)getCombined<uint64_t>(iter);
+  anEvent.tstamp_us = getDouble(iter);
+  if (has2ndTstamp) anEvent.rel_tstamp_us = getDouble(iter);
   anEvent.trigger_id = getCombined<uint64_t>(iter);
   anEvent.chmask = getCombined<uint64_t>(iter);
 }
@@ -36,6 +48,7 @@ CFERSA5202Unpacker::parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent)
 void
 CFERSA5202Unpacker::initialize(ParsedFERSA5202Event &anEvent) {
   anEvent.tstamp_us = 0;
+  anEvent.rel_tstamp_us = 0;
   anEvent.board_id = 0;
   anEvent.nhits = 0;
   anEvent.trigger_id = 0;
@@ -64,7 +77,10 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
 {
   vector<ParsedFERSA5202Event> parsedData;
 
-  int acqmode = (metadata & 0xFF00) >> 8;
+  // Since Janus 4.2.0 (format 3.3.0) bit7 of the acqmode byte flags
+  // Enable_2nd_tstamp: events then carry rel_tstamp_us after tstamp_us
+  int acqmode = (metadata & 0x0F00) >> 8;
+  bool has2ndTstamp = metadata & 0x8000;
   int timeunit = metadata & 0XFF;
 
   auto iter = begin;
@@ -75,7 +91,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
   switch (acqmode) {
     case ACQMODE_SPECT:
     {
-      parseCommonHeader(iter, anEvent);
+      parseCommonHeader(iter, anEvent, has2ndTstamp);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
@@ -100,7 +116,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
 
     case ACQMODE_SPECTIMING:
     {
-      parseCommonHeader(iter, anEvent);
+      parseCommonHeader(iter, anEvent, has2ndTstamp);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       switch (timeunit) {
@@ -175,7 +191,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
     }
     case ACQMODE_COUNTING: 
     {
-      parseCommonHeader(iter, anEvent);
+      parseCommonHeader(iter, anEvent, has2ndTstamp);
       int numChannels = __builtin_popcountll(anEvent.chmask);
 
       for (int iCh = 0; iCh < numChannels; iCh++) {
@@ -183,7 +199,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
         int chIdx = *oneByteIter++;
         iter = oneByteIter;
         anEvent.hasCounts[chIdx] = true;
-        anEvent.counts[chIdx] = getCombined<uint32_t>(iter);
+        anEvent.counts[chIdx] = getCombined<uint64_t>(iter);
       }
 
       parsedData.push_back(anEvent);
@@ -197,7 +213,7 @@ CFERSA5202Unpacker::parseAll(const Iter& begin,
       TranslatorPointer<uint8_t> oneByteIter(iter);
       anEvent.board_id = *oneByteIter++;
       iter = oneByteIter;
-      anEvent.tstamp_us = (double) getCombined<uint64_t>(iter);
+      anEvent.tstamp_us = getDouble(iter);
       anEvent.nhits = *iter++;
 
       switch (timeunit) {

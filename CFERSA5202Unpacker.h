@@ -8,6 +8,7 @@
 
 struct ParsedFERSA5202Event {
 	double tstamp_us;
+	double rel_tstamp_us;
   uint16_t board_id;
   uint16_t nhits;
 	uint64_t trigger_id;
@@ -25,7 +26,7 @@ struct ParsedFERSA5202Event {
   bool     hasToT_float[64];
   float    ToT_float[64];
   bool     hasCounts[64];
-	uint32_t counts[64];
+	uint64_t counts[64];
 };
 
 class CFERSA5202Unpacker
@@ -42,7 +43,9 @@ class CFERSA5202Unpacker
     template<typename T>
     T getCombined(Iter &iter);
     
-    void parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent);
+    double getDouble(Iter &iter);
+    void parseCommonHeader(Iter& iter, ParsedFERSA5202Event &anEvent,
+                           bool has2ndTstamp);
     void initialize(ParsedFERSA5202Event &anEvent);
 };
 

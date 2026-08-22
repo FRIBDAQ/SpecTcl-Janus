@@ -8,7 +8,8 @@
 #include <cfloat>
 
 // Data file format
-#define FM320 // 3.2.0
+#define FM330 // 3.3.0 (Janus 4.2.0)
+//#define FM320 // 3.2.0
 //#define FM310 // 3.1.0
 
 #include "FERS_fileheader.h"
@@ -42,8 +43,14 @@ CFERSUnpacker::operator()(const Address_t pEvent,
 
   int inclusiveSize = *p++ & 0xffff;
 
-  // File header event is always FileHeader_t size - 2(size) - 4(ender)
-  if (inclusiveSize - 6 == sizeof(FileHeader_t)) {
+  // File header event is always 2(size) + FileHeader_t size + 4(ender)
+  int headerSize = 2 + sizeof(FileHeader_t) + 4;
+#ifdef FM330
+  // Since Janus 4.2.0 the item is padded with 0xff up to a multiple of 4
+  // and the padding is counted in inclusiveSize
+  headerSize = (headerSize + 3) & ~3;
+#endif
+  if (inclusiveSize == headerSize) {
     /*
     // Leave it just in case we need it
     TranslatorPointer<FileHeader_t> pp(p);
