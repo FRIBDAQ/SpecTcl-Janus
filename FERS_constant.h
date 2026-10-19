@@ -34,4 +34,12 @@
 #define DATATYPE_TOT     0x20
 #define DATATYPE_TOATOT  0x30
 
+// Janus writes one event per board; parameters are indexed as BCC,
+// i.e. board_id*FERS_BOARD_STRIDE + channel (board 4 ch 3 -> LG.403).
+// Indices B64 - B99 are never filled
+#define FERS_NCH_PER_BOARD 64
+#define FERS_MAX_BOARDS    8
+#define FERS_BOARD_STRIDE  100
+#define FERS_MAX_NCH       (FERS_BOARD_STRIDE*FERS_MAX_BOARDS)
+
 #endif

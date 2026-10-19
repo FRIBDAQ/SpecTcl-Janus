@@ -23,13 +23,16 @@ using namespace std;
 CFERSUnpacker::CFERSUnpacker()
   : m_unpacker(),
     m_dataformat(34),
-    m_lg("LG", 10000, 0.0, (double) USHRT_MAX, "channels", 64, 0),
-    m_hg("HG", 10000, 0.0, (double) USHRT_MAX, "channels", 64, 0),
-    m_counts("counts", 10000, 0.0, (double) UINT_MAX, "counts", 64, 0),
-    m_toa_int("ToA_int", 10000, 0.0, (double) UINT_MAX, "0.5 ns", 64, 0),
-    m_tot_int("ToT_int", 10000, 0.0, (double) USHRT_MAX, "0.5 ns", 64, 0),
-    m_toa_float("ToA_float", 10000, 0.0, FLT_MAX, "ns", 64, 0),
-    m_tot_float("ToT_float", 10000, 0.0, FLT_MAX, "ns", 64, 0)
+    m_lg("LG", 10000, 0.0, (double) USHRT_MAX, "channels", FERS_MAX_NCH, 0),
+    m_hg("HG", 10000, 0.0, (double) USHRT_MAX, "channels", FERS_MAX_NCH, 0),
+    m_counts("counts", 10000, 0.0, (double) UINT_MAX, "counts", FERS_MAX_NCH, 0),
+    m_toa_int("ToA_int", 10000, 0.0, (double) UINT_MAX, "0.5 ns", FERS_MAX_NCH, 0),
+    m_tot_int("ToT_int", 10000, 0.0, (double) USHRT_MAX, "0.5 ns", FERS_MAX_NCH, 0),
+    m_toa_float("ToA_float", 10000, 0.0, FLT_MAX, "ns", FERS_MAX_NCH, 0),
+    m_tot_float("ToT_float", 10000, 0.0, FLT_MAX, "ns", FERS_MAX_NCH, 0),
+    m_numBoards("numBoards", 1, "boards"),
+    m_pendingBoards(0),
+    m_warnedBoards(0)
 {
 }
 
@@ -89,21 +92,72 @@ CFERSUnpacker::operator()(const Address_t pEvent,
 }
 
 Bool_t
+CFERSUnpacker::OnBegin(CAnalyzer& rAnalyzer, CBufferDecoder& rDecoder)
+{
+  // Never merge boards across runs
+  m_pending.clear();
+  m_pendingBoards = 0;
+  m_warnedBoards = 0;
+
+  return kfTRUE;
+}
+
+Bool_t
 CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
 {
+  // Timing mode events carry no trigger_id, so each board stays its own event
+  int acqmode = (metadata & 0x0F00) >> 8;
+  bool mergeBoards = acqmode != ACQMODE_TIMING;
+
+  int numBoards = (int) m_numBoards;
+  if (numBoards < 1) numBoards = 1;
+  if (numBoards > FERS_MAX_BOARDS) numBoards = FERS_MAX_BOARDS;
+  uint32_t allBoards = (1u << numBoards) - 1;
+
+  Bool_t emitted = kfFALSE;
+
   try {
     vector<ParsedFERSA5202Event> events = m_unpacker.parseAll(begin, metadata,
                                                               m_dataformat);
 
     for (auto& event : events) {
-      for (int iCh = 0; iCh < 64; iCh++) {
-        if (event.hasEnergyLG[iCh])  m_lg[iCh] = event.energyLG[iCh];
-        if (event.hasEnergyHG[iCh])  m_hg[iCh] = event.energyHG[iCh];
-        if (event.hasCounts[iCh])    m_counts[iCh] = event.counts[iCh];
-        if (event.hasToA_int[iCh])   m_toa_int[iCh] = event.ToA_int[iCh];
-        if (event.hasToT_int[iCh])   m_tot_int[iCh] = event.ToT_int[iCh];
-        if (event.hasToA_float[iCh]) m_toa_float[iCh] = event.ToA_float[iCh];
-        if (event.hasToT_float[iCh]) m_tot_float[iCh] = event.ToT_float[iCh];
+      if (event.board_id >= FERS_MAX_BOARDS) {
+        string errmsg = "board_id " + to_string(event.board_id)
+                      + " exceeds FERS_MAX_BOARDS ("
+                      + to_string(FERS_MAX_BOARDS) + ")";
+        throw runtime_error(errmsg);
+      }
+
+      // e.g. a masked board still sends one empty event at trigger 0
+      if (event.board_id >= numBoards) {
+        if (!(m_warnedBoards & (1u << event.board_id))) {
+          m_warnedBoards |= 1u << event.board_id;
+          cout << "Ignoring board " << event.board_id << " (numBoards = "
+               << numBoards << ")" << endl;
+        }
+        continue;
+      }
+
+      if (!mergeBoards) {
+        fill(event);
+        emitted = kfTRUE;
+        continue;
+      }
+
+      // A new trigger_id closes the held trigger even if boards are missing
+      if (!m_pending.empty() && event.trigger_id != m_pending[0].trigger_id) {
+        flushPending();
+        emitted = kfTRUE;
+      }
+
+      m_pending.push_back(event);
+      m_pendingBoards |= 1u << event.board_id;
+
+      // Only one trigger can be histogrammed per item; a complete trigger
+      // that could not go out now is released by the next trigger
+      if (!emitted && (m_pendingBoards & allBoards) == allBoards) {
+        flushPending();
+        emitted = kfTRUE;
       }
     }
   } catch (exception& exc) {
@@ -111,5 +165,32 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
     return kfFALSE;
   }
 
-  return kfTRUE;
+  // kfFALSE while the trigger is still being collected keeps SpecTcl from
+  // histogramming a partial event
+  return emitted;
+}
+
+void
+CFERSUnpacker::flushPending()
+{
+  for (auto& held : m_pending) fill(held);
+  m_pending.clear();
+  m_pendingBoards = 0;
+}
+
+void
+CFERSUnpacker::fill(const ParsedFERSA5202Event& event)
+{
+  // Each board's channels 0-63 map to BCC = board_id*100 + channel
+  int offset = event.board_id*FERS_BOARD_STRIDE;
+  for (int iCh = 0; iCh < FERS_NCH_PER_BOARD; iCh++) {
+    int idx = offset + iCh;
+    if (event.hasEnergyLG[iCh])  m_lg[idx] = event.energyLG[iCh];
+    if (event.hasEnergyHG[iCh])  m_hg[idx] = event.energyHG[iCh];
+    if (event.hasCounts[iCh])    m_counts[idx] = event.counts[iCh];
+    if (event.hasToA_int[iCh])   m_toa_int[idx] = event.ToA_int[iCh];
+    if (event.hasToT_int[iCh])   m_tot_int[idx] = event.ToT_int[iCh];
+    if (event.hasToA_float[iCh]) m_toa_float[idx] = event.ToA_float[iCh];
+    if (event.hasToT_float[iCh]) m_tot_float[idx] = event.ToT_float[iCh];
+  }
 }
