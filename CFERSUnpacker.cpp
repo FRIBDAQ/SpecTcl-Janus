@@ -30,7 +30,7 @@ CFERSUnpacker::CFERSUnpacker()
     m_tot_int("ToT_int", 10000, 0.0, (double) USHRT_MAX, "0.5 ns", FERS_MAX_NCH, 0),
     m_toa_float("ToA_float", 10000, 0.0, FLT_MAX, "ns", FERS_MAX_NCH, 0),
     m_tot_float("ToT_float", 10000, 0.0, FLT_MAX, "ns", FERS_MAX_NCH, 0),
-    m_numBoards("numBoards", 1, "boards"),
+    m_boardMask("boardMask", 0xfe, "mask"),
     m_pendingBoards(0),
     m_warnedBoards(0)
 {
@@ -109,10 +109,9 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
   int acqmode = (metadata & 0x0F00) >> 8;
   bool mergeBoards = acqmode != ACQMODE_TIMING;
 
-  int numBoards = (int) m_numBoards;
-  if (numBoards < 1) numBoards = 1;
-  if (numBoards > FERS_MAX_BOARDS) numBoards = FERS_MAX_BOARDS;
-  uint32_t allBoards = (1u << numBoards) - 1;
+  // A set bit in boardMask masks that board out: 0xfc keeps boards 0 and 1
+  uint32_t boardMask = (uint32_t)(int) m_boardMask & ((1u << FERS_MAX_BOARDS) - 1);
+  uint32_t activeBoards = ~boardMask & ((1u << FERS_MAX_BOARDS) - 1);
 
   Bool_t emitted = kfFALSE;
 
@@ -129,11 +128,11 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
       }
 
       // e.g. a masked board still sends one empty event at trigger 0
-      if (event.board_id >= numBoards) {
+      if (!(activeBoards & (1u << event.board_id))) {
         if (!(m_warnedBoards & (1u << event.board_id))) {
           m_warnedBoards |= 1u << event.board_id;
-          cout << "Ignoring board " << event.board_id << " (numBoards = "
-               << numBoards << ")" << endl;
+          cout << "Ignoring board " << event.board_id << " (boardMask = 0x"
+               << hex << boardMask << dec << ")" << endl;
         }
         continue;
       }
@@ -155,7 +154,7 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
 
       // Only one trigger can be histogrammed per item; a complete trigger
       // that could not go out now is released by the next trigger
-      if (!emitted && (m_pendingBoards & allBoards) == allBoards) {
+      if (!emitted && (m_pendingBoards & activeBoards) == activeBoards) {
         flushPending();
         emitted = kfTRUE;
       }

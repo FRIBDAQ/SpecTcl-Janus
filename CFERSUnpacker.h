@@ -26,14 +26,15 @@ class CFERSUnpacker : public CEventProcessor
     CTreeParameterArray    m_toa_float;
     CTreeParameterArray    m_tot_float;
 
-    // Boards in the system, numbered 0 to numBoards-1 (Tcl: numBoards).
-    // Events from boards >= numBoards are ignored.
-    CTreeVariable          m_numBoards;
+    // One bit per board, set = masked out (Tcl: boardMask, default 0xfe
+    // keeps board 0 only; 0xfc keeps boards 0 and 1). Events from masked
+    // boards are ignored.
+    CTreeVariable          m_boardMask;
 
     // Janus writes one ring item per board. Board events sharing a
     // trigger_id are held here and histogrammed together as one event
-    // once boards 0 to numBoards-1 have all arrived, or else when the
-    // first item of the next trigger arrives.
+    // once every unmasked board has arrived, or else when the first item
+    // of the next trigger arrives.
     std::vector<ParsedFERSA5202Event> m_pending;
     uint32_t               m_pendingBoards;
     uint32_t               m_warnedBoards;
