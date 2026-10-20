@@ -20,6 +20,13 @@
 
 using namespace std;
 
+// NSCLDAQ ring item type of the fragments that carry Janus data
+static const uint32_t kPhysicsEvent = 30;
+
+// NSCLDAQ event builder (glom --build) fragment header:
+// uint64 timestamp, uint32 source id, uint32 payload size, uint32 barrier
+static const uint32_t kFragmentHeaderBytes = 20;
+
 CFERSUnpacker::CFERSUnpacker()
   : m_unpacker(),
     m_dataformat(34),
@@ -32,7 +39,9 @@ CFERSUnpacker::CFERSUnpacker()
     m_tot_float("ToT_float", 10000, 0.0, FLT_MAX, "ns", FERS_MAX_NCH, 0),
     m_boardMask("boardMask", 0xfe, "mask"),
     m_pendingBoards(0),
-    m_warnedBoards(0)
+    m_warnedBoards(0),
+    m_builtBoards(0),
+    m_warnedDuplicate(false)
 {
 }
 
@@ -46,8 +55,82 @@ CFERSUnpacker::operator()(const Address_t pEvent,
                         CAnalyzer& rAnalyzer,
                         CBufferDecoder& rDecoder)
 {
-  TranslatorPointer<uint16_t> p(*rDecoder.getBufferTranslator(), pEvent);
+  // A built event's body starts with its own byte count.  A Janus item
+  // starts with uint16 inclusiveSize followed by a word that is never 0
+  // (metadata, or the dataformat bytes of the header record), so the two
+  // cannot be confused.
+  TranslatorPointer<uint32_t> p32(*rDecoder.getBufferTranslator(), pEvent);
+  uint32_t bodySize = rDecoder.getBodySize();
+  if (*p32 == bodySize) {
+    return unpackBuiltEvent(p32, bodySize);
+  }
 
+  // Plain Janus ring: one board per ring item
+  TranslatorPointer<uint16_t> p(*rDecoder.getBufferTranslator(), pEvent);
+  return unpackJanusItem(p, false);
+}
+
+Bool_t
+CFERSUnpacker::OnBegin(CAnalyzer& rAnalyzer, CBufferDecoder& rDecoder)
+{
+  // Never merge boards across runs
+  m_pending.clear();
+  m_pendingBoards = 0;
+  m_warnedBoards = 0;
+  m_warnedDuplicate = false;
+
+  return kfTRUE;
+}
+
+// Walk the fragments of a built event; each payload is a complete ring
+// item (header, body header, body) as fersBoardFilter emitted it
+Bool_t
+CFERSUnpacker::unpackBuiltEvent(TranslatorPointer<uint32_t> p, uint32_t bodySize)
+{
+  Bool_t filled = kfFALSE;
+  m_builtBoards = 0;
+
+  uint32_t offset = sizeof(uint32_t);           // past the byte count
+  p++;
+  while (offset + kFragmentHeaderBytes <= bodySize) {
+    p += 2;                                     // timestamp
+    p++;                                        // source id (== board_id)
+    uint32_t payloadSize = *p++;
+    p++;                                        // barrier
+    offset += kFragmentHeaderBytes;
+    if (payloadSize < 3*sizeof(uint32_t) || offset + payloadSize > bodySize) {
+      cout << "Built event: fragment of " << payloadSize
+           << " bytes does not fit in the " << bodySize << " byte body" << endl;
+      break;
+    }
+
+    // Ring item: uint32 size, uint32 type, then the body header whose
+    // first word is its size (4 when there is none), then the body
+    TranslatorPointer<uint32_t> item(p);
+    item++;                                     // size
+    uint32_t type = *item++;
+    uint32_t bodyHeaderSize = *item;
+    if (bodyHeaderSize < sizeof(uint32_t)) bodyHeaderSize = sizeof(uint32_t);
+    TranslatorPointer<uint8_t> body(item);
+    body += bodyHeaderSize;
+
+    if (type == kPhysicsEvent) {
+      TranslatorPointer<uint16_t> janus(body);
+      if (unpackJanusItem(janus, true)) filled = kfTRUE;
+    }
+
+    TranslatorPointer<uint8_t> next(p);
+    next += payloadSize;
+    p = next;
+    offset += payloadSize;
+  }
+
+  return filled;
+}
+
+Bool_t
+CFERSUnpacker::unpackJanusItem(TranslatorPointer<uint16_t> p, bool built)
+{
   int inclusiveSize = *p++ & 0xffff;
 
   // File header event is always 2(size) + FileHeader_t size + 4(ender)
@@ -57,7 +140,11 @@ CFERSUnpacker::operator()(const Address_t pEvent,
   // and the padding is counted in inclusiveSize
   headerSize = (headerSize + 3) & ~3;
 #endif
-  if (inclusiveSize == headerSize) {
+  // A timing-mode event with one hit is as long as the header record; the
+  // word after inclusiveSize tells them apart: dataformat major/minor
+  // bytes (major 3) for the record, metadata for an event, whose low byte
+  // is the time unit (0 or 1)
+  if (inclusiveSize == headerSize && (*p & 0xff) > 1) {
     // First two bytes of the header record are the dataformat version
     TranslatorPointer<uint8_t> pVersion(p);
     int major = *pVersion++;
@@ -81,29 +168,20 @@ CFERSUnpacker::operator()(const Address_t pEvent,
     cout << dec << "sams: " << fileheader.startacq_ms << endl;
     */
 
-    return kfTRUE;
+    // In a built event the record is one fragment among the boards'
+    // events and histograms nothing by itself
+    return built ? kfFALSE : kfTRUE;
   }
 
   // Reaching here are events
 
   int metadata = *p++ & 0xffff;
 
-  return unpack(p, metadata);
+  return unpack(p, metadata, built);
 }
 
 Bool_t
-CFERSUnpacker::OnBegin(CAnalyzer& rAnalyzer, CBufferDecoder& rDecoder)
-{
-  // Never merge boards across runs
-  m_pending.clear();
-  m_pendingBoards = 0;
-  m_warnedBoards = 0;
-
-  return kfTRUE;
-}
-
-Bool_t
-CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
+CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata, bool built)
 {
   // Timing mode events carry no trigger_id, so each board stays its own event
   int acqmode = (metadata & 0x0F00) >> 8;
@@ -125,6 +203,20 @@ CFERSUnpacker::unpack(TranslatorPointer<uint16_t> begin, uint16_t metadata)
                       + " exceeds FERS_MAX_BOARDS ("
                       + to_string(FERS_MAX_BOARDS) + ")";
         throw runtime_error(errmsg);
+      }
+
+      // Built event: the event builder already grouped the boards
+      if (built) {
+        if ((m_builtBoards & (1u << event.board_id)) && !m_warnedDuplicate) {
+          m_warnedDuplicate = true;
+          cout << "Built event with two fragments of board " << event.board_id
+               << " (glom coincidence window too wide?); later fragments "
+               << "overwrite earlier ones. Reported once per run." << endl;
+        }
+        m_builtBoards |= 1u << event.board_id;
+        fill(event);
+        emitted = kfTRUE;
+        continue;
       }
 
       // e.g. a masked board still sends one empty event at trigger 0
